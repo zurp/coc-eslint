@@ -10,6 +10,6 @@
     "lib": ["es2018"],
     "plugins": []
   },
-  "include": ["src"],
+  "include": ["src", "server"],
   "exclude": []
 }
