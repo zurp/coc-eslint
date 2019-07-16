@@ -1,16 +1,16 @@
 import {
-  Uri,
-  commands,
+  ConfigurationChangeEvent,
   ExtensionContext,
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
-  services,
   ServiceStat,
   TransportKind,
-  workspace,
+  Uri,
   WorkspaceMiddleware,
-  ConfigurationChangeEvent
+  commands,
+  services,
+  workspace
 } from "coc.nvim";
 import { ProviderResult } from "coc.nvim/lib/provider";
 import fs from "fs";
@@ -79,7 +79,7 @@ interface CodeActionSettings {
 
 namespace DirectoryItem {
   export function is(item: any): item is DirectoryItem {
-    let candidate = item as DirectoryItem;
+    const candidate = item as DirectoryItem;
     return (
       candidate &&
       Is.string(candidate.directory) &&
@@ -141,17 +141,17 @@ const exitCalled = new NotificationType<[number, string], void>(
 );
 
 async function createDefaultConfiguration(): Promise<void> {
-  let { root } = workspace;
-  let configFiles = [
+  const { root } = workspace;
+  const configFiles = [
     ".eslintrc.js",
     ".eslintrc.yaml",
     ".eslintrc.yml",
     ".eslintrc",
     ".eslintrc.json"
   ];
-  for (let configFile of configFiles) {
+  for (const configFile of configFiles) {
     if (fs.existsSync(path.join(root, configFile))) {
-      workspace.openResource(Uri.file(root).toString()).catch(_e => {
+      workspace.openResource(Uri.file(root).toString()).catch(error => {
         // noop
       });
       return;
@@ -160,22 +160,22 @@ async function createDefaultConfiguration(): Promise<void> {
   const eslintCommand = await findEslint(root);
   await workspace.nvim.call("coc#util#open_terminal", [
     {
-      cmd: eslintCommand + " --init",
+      cmd: `${eslintCommand} --init`,
       cwd: root
     }
   ]);
 }
 
 function shouldBeValidated(textDocument: TextDocument): boolean {
-  let config = workspace.getConfiguration("eslint", textDocument.uri);
+  const config = workspace.getConfiguration("eslint", textDocument.uri);
   if (!config.get("enable", true)) return false;
-  let filetypes = config.get<(string)[]>("filetypes", defaultLanguages);
-  return filetypes.indexOf(textDocument.languageId) !== -1;
+  const filetypes = config.get<(string)[]>("filetypes", defaultLanguages);
+  return filetypes.includes(textDocument.languageId);
 }
 
 export async function activate(context: ExtensionContext): Promise<void> {
-  let { subscriptions } = context;
-  const config = workspace.getConfiguration().get<any>("eslint", {}) as any;
+  const { subscriptions } = context;
+  const config = workspace.getConfiguration().get<any>("eslint", {});
   const filetypes = config.filetypes || ["javascript", "javascriptreact"];
   const selector: DocumentSelector = filetypes.reduce((res, filetype) => {
     return res.concat([
@@ -184,7 +184,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
     ]);
   }, []);
 
-  let serverOptions: ServerOptions = {
+  const serverOptions: ServerOptions = {
     module: context.asAbsolutePath("./lib/server/index.js"),
     args: ["--node-ipc"],
     transport: TransportKind.ipc,
@@ -196,7 +196,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
 
   const syncedDocuments: Map<string, TextDocument> = new Map();
 
-  let clientOptions: LanguageClientOptions = {
+  const clientOptions: LanguageClientOptions = {
     documentSelector: selector,
     synchronize: {
       configurationSection: "eslint",
@@ -223,7 +223,6 @@ export async function activate(context: ExtensionContext): Promise<void> {
         if (shouldBeValidated(document)) {
           next(document);
           syncedDocuments.set(document.uri.toString(), document);
-          return;
         }
       },
       didChange: (event, next) => {
@@ -232,7 +231,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
         }
       },
       didClose: (document, next) => {
-        let uri = document.uri.toString();
+        const uri = document.uri.toString();
         if (syncedDocuments.has(uri)) {
           syncedDocuments.delete(uri);
           next(document);
@@ -252,8 +251,8 @@ export async function activate(context: ExtensionContext): Promise<void> {
         ) {
           return [];
         }
-        let eslintDiagnostics: Diagnostic[] = [];
-        for (let diagnostic of context.diagnostics) {
+        const eslintDiagnostics: Diagnostic[] = [];
+        for (const diagnostic of context.diagnostics) {
           if (diagnostic.source === "eslint") {
             eslintDiagnostics.push(diagnostic);
           }
@@ -261,19 +260,22 @@ export async function activate(context: ExtensionContext): Promise<void> {
         if (eslintDiagnostics.length === 0) {
           return [];
         }
-        let newContext: CodeActionContext = Object.assign({}, context, {
-          diagnostics: eslintDiagnostics
-        } as CodeActionContext);
+        const newContext: CodeActionContext = {
+          ...context,
+          ...({
+            diagnostics: eslintDiagnostics
+          } as CodeActionContext)
+        };
         return next(document, range, newContext, token);
       },
       workspace: {
         configuration: (params, _token, _next): any => {
           return params.items.map(item => {
-            let uri = item.scopeUri;
-            let config = workspace.getConfiguration("eslint", uri);
-            let pm = config.get("packageManager", "npm");
-            let settings: TextDocumentSettings = {
-              packageManager: pm === "yarn" ? "yarn" : "npm",
+            const uri = item.scopeUri;
+            const config = workspace.getConfiguration("eslint", uri);
+            const pm = config.get("packageManager", "npm");
+            return {
+              packageManager: pm || "npm",
               quiet: config.get("quiet", false),
               validate: config.get("validate", true),
               autoFix: config.get("autoFix", false),
@@ -293,14 +295,13 @@ export async function activate(context: ExtensionContext): Promise<void> {
                 })
               }
             };
-            return settings;
           });
         }
       } as WorkspaceMiddleware
     }
   };
 
-  let client = new LanguageClient(
+  const client = new LanguageClient(
     "eslint",
     "eslint langserver",
     serverOptions,
@@ -312,7 +313,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
   function onDidChangeConfiguration(e: ConfigurationChangeEvent): void {
     if (!e.affectsConfiguration("eslint")) return;
     if (client.serviceState != ServiceStat.Running) return;
-    for (let textDocument of syncedDocuments.values()) {
+    for (const textDocument of syncedDocuments.values()) {
       if (!shouldBeValidated(textDocument)) {
         syncedDocuments.delete(textDocument.uri);
         client.sendNotification(DidCloseTextDocumentNotification.type, {
@@ -320,7 +321,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
         });
       }
     }
-    for (let textDocument of workspace.textDocuments) {
+    for (const textDocument of workspace.textDocuments) {
       if (
         !syncedDocuments.has(textDocument.uri.toString()) &&
         shouldBeValidated(textDocument)
@@ -344,12 +345,12 @@ export async function activate(context: ExtensionContext): Promise<void> {
 
   subscriptions.push(
     commands.registerCommand("eslint.executeAutofix", async () => {
-      let document = await workspace.document;
-      let textDocument: VersionedTextDocumentIdentifier = {
+      const document = await workspace.document;
+      const textDocument: VersionedTextDocumentIdentifier = {
         uri: document.uri,
         version: document.version
       };
-      let params: ExecuteCommandParams = {
+      const params: ExecuteCommandParams = {
         command: "eslint.applyAutoFix",
         arguments: [textDocument]
       };
@@ -373,8 +374,8 @@ export async function activate(context: ExtensionContext): Promise<void> {
         );
       });
       client.onRequest(NoConfigRequest.type, params => {
-        let document = Uri.parse(params.document.uri);
-        let fileLocation = document.fsPath;
+        const document = Uri.parse(params.document.uri);
+        const fileLocation = document.fsPath;
         workspace.showMessage(
           `No ESLint configuration (e.g .eslintrc) found for file: ${fileLocation}`,
           "warning"
@@ -382,7 +383,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
         return {};
       });
       client.onRequest(NoESLintLibraryRequest.type, params => {
-        let uri: Uri = Uri.parse(params.source.uri);
+        const uri: Uri = Uri.parse(params.source.uri);
         workspace.showMessage(
           `Failed to load the ESLint library for the document ${uri.fsPath}`,
           "warning"
